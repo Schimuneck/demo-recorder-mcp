@@ -101,6 +101,38 @@ def register_video_tools(mcp, backend):
         
         return output
     
+    @mcp.tool(description="Delete a specific media file from the recordings directory.")
+    async def delete_media(filename: str) -> str:
+        """Delete a single media file.
+        
+        Args:
+            filename: The filename to delete (e.g., "scene1_raw.mp4").
+        """
+        recordings_dir = backend.get_recordings_dir()
+        path = recordings_dir / filename
+        if not path.exists():
+            return f"File not found: {filename}"
+        try:
+            path.unlink()
+            return f"Deleted: {filename}"
+        except Exception as e:
+            return f"Failed to delete {filename}: {e}"
+
+    @mcp.tool(description="Delete ALL media files from the recordings directory.")
+    async def delete_all_media() -> str:
+        """Delete every video and audio file in the recordings directory."""
+        recordings_dir = backend.get_recordings_dir()
+        media_extensions = {'.mp4', '.mp3', '.wav', '.webm', '.mkv', '.avi', '.m4a'}
+        deleted = 0
+        for file_path in recordings_dir.iterdir():
+            if file_path.is_file() and file_path.suffix.lower() in media_extensions:
+                try:
+                    file_path.unlink()
+                    deleted += 1
+                except Exception:
+                    pass
+        return f"Deleted {deleted} media file(s)."
+
     @mcp.tool(description="Join multiple video files into one sequential video.")
     async def concatenate_videos(filenames: list[str], output_filename: str) -> str:
         """Concatenate multiple videos.

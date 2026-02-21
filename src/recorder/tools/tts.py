@@ -10,30 +10,28 @@ from pathlib import Path
 def register_tts_tools(mcp, backend):
     """Register TTS tools with the MCP server."""
     
-    @mcp.tool(description="Convert text to speech audio. Uses OpenAI TTS if API key set, else Edge TTS.")
-    async def text_to_speech(text: str, filename: str = None) -> str:
+    @mcp.tool(description="Convert text to speech audio. Uses OpenAI TTS if API key provided or set in env, else Edge TTS.")
+    async def text_to_speech(text: str, filename: str = None, api_key: str = None) -> str:
         """Generate speech from text.
         
         Args:
             text: The text to convert to speech.
             filename: Output filename (e.g., "narration.mp3"). Auto-generated if not provided.
+            api_key: OpenAI API key. Falls back to OPENAI_API_KEY env var if not provided.
         """
         from ..utils.ffmpeg import get_audio_duration
         
-        # Auto-generate filename if not provided
         if not filename:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"tts_{timestamp}.mp3"
         
-        # Ensure .mp3 extension
         if not filename.endswith('.mp3'):
             filename += '.mp3'
         
         out_path = backend.get_recordings_dir() / filename
         
-        # Simplified: Always use "onyx" voice, auto-detect engine from API key
-        voice = "onyx"  # Professional, clear voice - best for demos
-        api_key = os.environ.get("OPENAI_API_KEY")
+        voice = "onyx"
+        api_key = api_key or os.environ.get("OPENAI_API_KEY")
         
         # Auto-detect engine: OpenAI if API key available, otherwise Edge TTS
         if api_key:

@@ -33,6 +33,97 @@ from fastmcp import FastMCP
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
+class OpenAICompatMiddleware:
+    """ASGI middleware for OpenAI Responses API compatibility.
+    
+    1. Strips outputSchema and _meta from tools/list responses (OpenAI rejects them)
+    2. Logs all incoming requests for debugging
+    3. Handles SSE response bodies that need field stripping
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+
+        path = scope.get("path", "")
+        method = scope.get("method", "")
+        headers = dict(scope.get("headers", []))
+        logger.info(f"MIDDLEWARE: {method} {path} headers={dict((k.decode(), v.decode()) for k, v in scope.get('headers', []))}")
+
+        body_parts = []
+        initial_message = None
+
+        async def send_wrapper(message):
+            nonlocal initial_message
+            if message["type"] == "http.response.start":
+                initial_message = message
+                status = message.get("status", 0)
+                resp_headers = dict((k.decode(), v.decode()) for k, v in message.get("headers", []))
+                logger.info(f"MIDDLEWARE RESPONSE: status={status} headers={resp_headers}")
+                return
+            if message["type"] == "http.response.body":
+                body = message.get("body", b"")
+                more = message.get("more_body", False)
+                body_parts.append(body)
+                if not more:
+                    full_body = b"".join(body_parts)
+                    full_body = self._strip_fields(full_body)
+                    if initial_message:
+                        new_headers = [
+                            (k, v) for k, v in initial_message.get("headers", [])
+                            if k != b"content-length"
+                        ]
+                        new_headers.append((b"content-length", str(len(full_body)).encode()))
+                        initial_message["headers"] = new_headers
+                        await send(initial_message)
+                    await send({"type": "http.response.body", "body": full_body})
+                return
+            await send(message)
+
+        await self.app(scope, receive, send_wrapper)
+
+    def _strip_fields(self, body: bytes) -> bytes:
+        # Handle SSE-formatted responses (text/event-stream)
+        body_str = body.decode("utf-8", errors="replace")
+        if body_str.startswith("event:") or body_str.startswith("data:"):
+            return self._strip_sse_fields(body_str).encode()
+        try:
+            data = json.loads(body_str)
+        except (json.JSONDecodeError, ValueError):
+            return body
+        return self._strip_json_fields(data).encode()
+
+    def _strip_json_fields(self, data: dict) -> str:
+        if isinstance(data, dict):
+            result = data.get("result")
+            if isinstance(result, dict):
+                tools = result.get("tools")
+                if tools and isinstance(tools, list):
+                    for tool in tools:
+                        tool.pop("outputSchema", None)
+                        tool.pop("_meta", None)
+        return json.dumps(data)
+
+    def _strip_sse_fields(self, body: str) -> str:
+        lines = body.split("\n")
+        new_lines = []
+        for line in lines:
+            if line.startswith("data: "):
+                payload = line[6:]
+                try:
+                    data = json.loads(payload)
+                    stripped = self._strip_json_fields(data)
+                    new_lines.append(f"data: {stripped}")
+                    continue
+                except (json.JSONDecodeError, ValueError):
+                    pass
+            new_lines.append(line)
+        return "\n".join(new_lines)
+
 # Placeholder for the proxy - will be created in main() with lifespan
 proxy: Optional[FastMCP] = None
 
@@ -109,8 +200,7 @@ async def _send_playwright_request(method: str, params: dict = None) -> dict:
     await _playwright.process.stdin.drain()
     
     try:
-        # Increase timeout for browser operations
-        timeout = 120 if method == "tools/call" else 60
+        timeout = 45 if method == "tools/call" else 30
         logger.debug(f"Waiting for {method} (id={request_id}) with timeout={timeout}")
         response = await asyncio.wait_for(future, timeout=timeout)
         return response
@@ -136,7 +226,7 @@ async def _start_playwright():
         "npx", "@playwright/mcp", "--browser", browser,
         stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
         env={**os.environ, "CONTAINER": os.environ.get("CONTAINER", "docker")},
     )
     
@@ -261,21 +351,32 @@ def main():
     # Add custom routes
     _register_custom_routes(proxy)
     
-    # Run with selected transport
+    # Monkeypatch: strip outputSchema/_meta for OpenAI compatibility
+    # OpenAI's Responses API rejects tools with these FastMCP-specific fields
+    try:
+        from fastmcp.tools import Tool as FastMCPTool
+        _orig = FastMCPTool.to_mcp_tool
+        def _patched(self, **kwargs):
+            kwargs['include_fastmcp_meta'] = False
+            tool = _orig(self, **kwargs)
+            if hasattr(tool, 'outputSchema'):
+                object.__setattr__(tool, 'outputSchema', None)
+            return tool
+        FastMCPTool.to_mcp_tool = _patched
+        logger.info("Patched Tool.to_mcp_tool to strip outputSchema for OpenAI compatibility")
+    except Exception as e:
+        logger.warning(f"Could not patch Tool.to_mcp_tool: {e}")
+
     if transport_mode == "stdio":
-        # STDIO mode for Cursor and other MCP clients
         proxy.run(transport="stdio")
     else:
-        # HTTP transport (streamable-http) - required for OpenAI Responses API
-        # path="/mcp/" with trailing slash to match OpenAI's expected URL format
-        # json_response=True for clients that only accept application/json
-        # See: https://gofastmcp.com/integrations/openai
         proxy.run(
             transport="http",
             host=host,
             port=port,
-            path="/mcp/",
+            path="/",
             json_response=True,
+            stateless_http=True,
         )
 
 
@@ -355,8 +456,19 @@ def _register_playwright_tools(mcp_instance: FastMCP):
 
     @mcp_instance.tool
     async def browser_navigate(url: str) -> str:
-        """Navigate to a URL."""
-        return await _call_playwright_tool("browser_navigate", {"url": url})
+        """Navigate to a URL (30s page-load timeout to prevent hanging)."""
+        safe_url = url.replace("'", "\\'")
+        code = (
+            f"async (page) => {{"
+            f"  try {{ await page.goto('{safe_url}', {{waitUntil: 'domcontentloaded', timeout: 30000}}); }}"
+            f"  catch (e) {{ if (!e.message.includes('Timeout')) throw e; }}"
+            f"  return `Navigated to ${{page.url()}} — ${{await page.title()}}`;"
+            f"}}"
+        )
+        try:
+            return await _call_playwright_tool("browser_run_code", {"code": code})
+        except Exception as e:
+            return f"Navigation failed for {url}: {e}"
 
     @mcp_instance.tool
     async def browser_navigate_back() -> str:
@@ -448,9 +560,12 @@ def _register_playwright_tools(mcp_instance: FastMCP):
 
     @mcp_instance.tool
     async def browser_wait_for(time: int = None, text: str = None, textGone: str = None) -> str:
-        """Wait for text to appear or disappear or a specified time to pass."""
+        """Wait for text to appear/disappear or N seconds. Time is in SECONDS (use 2-5, max 30)."""
         args = {}
         if time is not None:
+            if time > 30:
+                logger.warning(f"browser_wait_for time={time}s capped to 30s (was likely meant as ms)")
+                time = min(time, 30)
             args["time"] = time
         if text:
             args["text"] = text
