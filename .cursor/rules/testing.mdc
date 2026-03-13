@@ -1,0 +1,55 @@
+---
+description: Testing conventions with pytest
+alwaysApply: true
+---
+
+# Testing Conventions
+
+## pytest Configuration
+
+From `pyproject.toml`:
+- `asyncio_mode = "auto"` - async tests run automatically
+- `testpaths = ["tests"]` - tests live in `tests/` directory
+
+## Test File Structure
+
+```
+tests/
+├── __init__.py
+├── test_server.py      # Server and integration tests
+├── test_backends.py    # Backend unit tests
+└── test_tools.py       # Tool function tests
+```
+
+## Async Test Pattern
+
+```python
+import pytest
+
+async def test_recording_start():
+    """Test that recording can be started."""
+    backend = MockBackend()
+    result = await backend.start_recording(
+        output_path=Path("/tmp/test.mp4"),
+        window_title="Test Window"
+    )
+    assert result.success
+    assert result.file_path is not None
+```
+
+## Running Tests
+
+```bash
+# Run all tests
+uv run pytest
+
+# Run with coverage
+uv run pytest --cov=src/recorder
+
+# Run specific test
+uv run pytest tests/test_server.py -k "test_name"
+```
+
+## Mocking
+
+Use `unittest.mock` for external dependencies (FFmpeg, window APIs).

@@ -49,3 +49,10 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Environment
+.env
+.env.local
+
+# AI Agent folders (may contain credentials)
+.claude/

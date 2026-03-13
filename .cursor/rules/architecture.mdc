@@ -1,0 +1,61 @@
+---
+description: Architecture patterns for backends and tools
+alwaysApply: true
+---
+
+# Architecture Patterns
+
+## Backend Pattern
+
+Backends implement environment-specific recording via abstract base class:
+
+```python
+from abc import ABC, abstractmethod
+
+class RecordingBackend(ABC):
+    """Abstract interface for recording operations."""
+    
+    @abstractmethod
+    def get_name(self) -> str:
+        """Get backend name for logging."""
+        pass
+    
+    @abstractmethod
+    def get_capture_args(self, window_title: str, fps: int) -> Tuple[List[str], Optional[str], Optional[str]]:
+        """Return (ffmpeg_args, crop_filter, error_message)."""
+        pass
+```
+
+Implementations: `ContainerBackend` (Docker/Xvfb), `HostBackend` (native)
+
+## Tool Registration
+
+Tools are registered in `tools/__init__.py` via `register_all_tools()`:
+
+```python
+def register_all_tools(mcp: FastMCP, backend: RecordingBackend):
+    """Register all MCP tools."""
+    register_guide_tools(mcp)
+    register_recording_tools(mcp, backend)
+    register_video_tools(mcp, backend)
+    register_tts_tools(mcp)
+```
+
+Each tool module has a `register_*_tools(mcp, ...)` function.
+
+## Result Types
+
+Use dataclasses in `core/types.py` for structured returns:
+
+```python
+@dataclass
+class RecordingResult:
+    success: bool
+    message: str
+    file_path: Optional[Path] = None
+    duration: Optional[float] = None
+```
+
+## Error Handling
+
+Return result objects with `success=False` rather than raising exceptions in tools.

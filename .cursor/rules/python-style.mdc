@@ -1,0 +1,60 @@
+---
+description: Python code style for demo-recorder
+alwaysApply: true
+---
+
+# Python Style Guide
+
+## Ruff Configuration
+
+From `pyproject.toml`:
+- Line length: 100
+- Target: Python 3.10+
+- Rules: E, F, I, W (ignore E501)
+
+## Type Hints
+
+Use type hints for function signatures:
+
+```python
+# ✅ Good
+def get_capture_args(self, window_title: str, fps: int = 30) -> Tuple[List[str], Optional[str], Optional[str]]:
+
+# ❌ Bad
+def get_capture_args(self, window_title, fps=30):
+```
+
+## Docstrings
+
+Use triple-quoted docstrings with Args/Returns sections for public methods:
+
+```python
+def get_window_bounds(self, window_title: str) -> Optional[WindowBounds]:
+    """Get the bounds of a window.
+    
+    Args:
+        window_title: Window title pattern.
+        
+    Returns:
+        WindowBounds or None if not found.
+    """
+```
+
+## Imports
+
+Order: stdlib → third-party → local (ruff handles this via `I` rule)
+
+```python
+import asyncio
+from pathlib import Path
+from typing import Optional
+
+from fastmcp import FastMCP
+
+from .backends import get_backend
+from ..core.types import RecordingResult
+```
+
+## Async Patterns
+
+Use `async def` for I/O operations, `await asyncio.sleep()` for delays.

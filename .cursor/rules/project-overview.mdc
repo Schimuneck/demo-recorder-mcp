@@ -1,0 +1,43 @@
+---
+description: Demo Recorder MCP project context and workflow
+alwaysApply: true
+---
+
+# Demo Recorder MCP
+
+An MCP server for creating professional demo videos with synchronized voiceover narration.
+
+## Core Concepts
+
+- **FastMCP**: Server framework (`from fastmcp import FastMCP`)
+- **Backends**: Environment-specific implementations (container vs host)
+- **4-Phase Workflow**: planning → setup → recording → editing
+
+## Project Structure
+
+```
+src/recorder/
+├── server.py          # FastMCP server entry point
+├── backends/          # Container and Host implementations
+├── tools/             # MCP tool definitions (guides, recording, video, tts)
+├── transports/        # HTTP and multiplexer transports
+├── core/              # Types, config
+└── utils/             # FFmpeg, window management, protocol guides
+```
+
+## MCP Tool Registration Pattern
+
+Tools are registered via decorator on the `mcp` instance:
+
+```python
+@mcp.tool(description="Clear description of what this tool does")
+async def tool_name(param: str) -> str:
+    """Docstring explains the tool's purpose."""
+    return result
+```
+
+## Key Dependencies
+
+- `fastmcp>=2.0.0` - MCP server framework
+- `openai` (optional) - TTS via OpenAI API
+- `edge-tts` (optional) - Free Edge TTS alternative
