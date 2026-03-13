@@ -110,7 +110,7 @@ One demo = multiple scenes. Each scene = one recording + one audio file.
 ```
 Demo: "Product Tour"
   Scene 1: Homepage intro       - 15s video, 15s audio
-  Scene 2: Feature overview     - 20s video, 18s audio  
+  Scene 2: Feature overview     - 20s video, 18s audio
   Scene 3: Click-through demo   - 25s video, 22s audio
   Scene 4: Conclusion           - 10s video, 12s audio
   Final:   Concatenate all      - ~70s total
@@ -169,7 +169,7 @@ Actions before start_recording() are NOT captured - the video would be static.**
 
 Split into separate scenes when:
 - Showing a different feature
-- Navigating to a new page  
+- Navigating to a new page
 - Performing a different type of action
 - Narration focus changes
 
@@ -505,27 +505,27 @@ def _build_setup_guide(is_container: bool) -> str:
     """Build the setup guide with mode-appropriate content."""
     if is_container:
         return (
-            SETUP_GUIDE_HEADER +
-            SETUP_GUIDE_CONTAINER_ENV +
-            SETUP_GUIDE_CONTAINER_FLOW +
-            SETUP_GUIDE_CONTAINER_CONFIG +
-            SETUP_GUIDE_VERIFICATION +
-            SETUP_GUIDE_CONTAINER_TOOLS +
-            SETUP_GUIDE_BROWSER_TOOLS +
-            SETUP_GUIDE_CONTAINER_ISSUES +
-            SETUP_GUIDE_FOOTER
+            SETUP_GUIDE_HEADER
+            + SETUP_GUIDE_CONTAINER_ENV
+            + SETUP_GUIDE_CONTAINER_FLOW
+            + SETUP_GUIDE_CONTAINER_CONFIG
+            + SETUP_GUIDE_VERIFICATION
+            + SETUP_GUIDE_CONTAINER_TOOLS
+            + SETUP_GUIDE_BROWSER_TOOLS
+            + SETUP_GUIDE_CONTAINER_ISSUES
+            + SETUP_GUIDE_FOOTER
         )
     else:
         return (
-            SETUP_GUIDE_HEADER +
-            SETUP_GUIDE_HOST_ENV +
-            SETUP_GUIDE_HOST_FLOW +
-            SETUP_GUIDE_HOST_CONFIG +
-            SETUP_GUIDE_VERIFICATION +
-            SETUP_GUIDE_HOST_TOOLS +
-            SETUP_GUIDE_BROWSER_TOOLS +
-            SETUP_GUIDE_HOST_ISSUES +
-            SETUP_GUIDE_FOOTER
+            SETUP_GUIDE_HEADER
+            + SETUP_GUIDE_HOST_ENV
+            + SETUP_GUIDE_HOST_FLOW
+            + SETUP_GUIDE_HOST_CONFIG
+            + SETUP_GUIDE_VERIFICATION
+            + SETUP_GUIDE_HOST_TOOLS
+            + SETUP_GUIDE_BROWSER_TOOLS
+            + SETUP_GUIDE_HOST_ISSUES
+            + SETUP_GUIDE_FOOTER
         )
 
 
@@ -710,7 +710,7 @@ concatenate_videos(
 | Scroll without waiting   | Always wait 2s after scroll            |
 | Skipped verification     | Snapshot before and after recording    |
 
-**#1 Mistake:** Performing actions before start_recording() and wondering why 
+**#1 Mistake:** Performing actions before start_recording() and wondering why
 the video is static. The recording only captures what happens AFTER it starts.
 
 ---
@@ -943,17 +943,9 @@ If step N fails:
 def _build_assembly_guide(is_container: bool) -> str:
     """Build the assembly guide with mode-appropriate content."""
     if is_container:
-        return (
-            ASSEMBLY_GUIDE_MAIN +
-            ASSEMBLY_GUIDE_CONTAINER_FILES +
-            ASSEMBLY_GUIDE_FOOTER
-        )
+        return ASSEMBLY_GUIDE_MAIN + ASSEMBLY_GUIDE_CONTAINER_FILES + ASSEMBLY_GUIDE_FOOTER
     else:
-        return (
-            ASSEMBLY_GUIDE_MAIN +
-            ASSEMBLY_GUIDE_HOST_FILES +
-            ASSEMBLY_GUIDE_FOOTER
-        )
+        return ASSEMBLY_GUIDE_MAIN + ASSEMBLY_GUIDE_HOST_FILES + ASSEMBLY_GUIDE_FOOTER
 
 
 # =============================================================================
@@ -1000,9 +992,10 @@ Each guide is focused (~200 lines) and provides clear next steps.
 # Public Functions
 # =============================================================================
 
+
 def get_planning_guide() -> str:
     """Phase 1: Return the demo planning guide.
-    
+
     This guide is mode-independent (same content for container and host).
     """
     return PLANNING_GUIDE
@@ -1010,7 +1003,7 @@ def get_planning_guide() -> str:
 
 def get_setup_guide() -> str:
     """Phase 2: Return the recording setup guide.
-    
+
     This guide is MODE-AWARE:
     - Container mode: Shows Xvfb, Firefox, /app/recordings/ content
     - Host mode: Shows platform-native capture, ~/recordings/ content
@@ -1020,7 +1013,7 @@ def get_setup_guide() -> str:
 
 def get_recording_guide() -> str:
     """Phase 3: Return the recording actions guide.
-    
+
     This guide is mode-independent (same content for container and host).
     """
     return RECORDING_GUIDE
@@ -1028,7 +1021,7 @@ def get_recording_guide() -> str:
 
 def get_assembly_guide() -> str:
     """Phase 4: Return the video assembly guide.
-    
+
     This guide is MODE-AWARE:
     - Container mode: Shows /app/recordings/ file structure
     - Host mode: Shows ~/recordings/ file structure

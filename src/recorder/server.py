@@ -29,11 +29,11 @@ IMPORTANT: To create a demo, ALWAYS call planning_phase_1() FIRST!
 
 The workflow follows 4 phases:
 1. planning_phase_1() - Plan the demo structure and scenes
-2. setup_phase_2() - Prepare browser and environment  
+2. setup_phase_2() - Prepare browser and environment
 3. recording_phase_3() - Record scenes with narration
 4. editing_phase_4() - Assemble final video
 
-Never skip phases. Each phase guide provides detailed instructions."""
+Never skip phases. Each phase guide provides detailed instructions.""",
 )
 
 # Auto-select backend based on environment
@@ -46,6 +46,7 @@ register_all_tools(mcp, backend)
 # =============================================================================
 # Entry Points
 # =============================================================================
+
 
 def run():
     """Entry point for STDIO transport (default)."""

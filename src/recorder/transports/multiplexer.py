@@ -25,7 +25,7 @@ import logging
 import os
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Optional
 
 from fastmcp import FastMCP
 
@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 
 class OpenAICompatMiddleware:
     """ASGI middleware for OpenAI Responses API compatibility.
-    
+
     1. Strips outputSchema and _meta from tools/list responses (OpenAI rejects them)
     2. Logs all incoming requests for debugging
     3. Handles SSE response bodies that need field stripping
@@ -51,8 +51,10 @@ class OpenAICompatMiddleware:
 
         path = scope.get("path", "")
         method = scope.get("method", "")
-        headers = dict(scope.get("headers", []))
-        logger.info(f"MIDDLEWARE: {method} {path} headers={dict((k.decode(), v.decode()) for k, v in scope.get('headers', []))}")
+        dict(scope.get("headers", []))
+        logger.info(
+            f"MIDDLEWARE: {method} {path} headers={dict((k.decode(), v.decode()) for k, v in scope.get('headers', []))}"
+        )
 
         body_parts = []
         initial_message = None
@@ -74,7 +76,8 @@ class OpenAICompatMiddleware:
                     full_body = self._strip_fields(full_body)
                     if initial_message:
                         new_headers = [
-                            (k, v) for k, v in initial_message.get("headers", [])
+                            (k, v)
+                            for k, v in initial_message.get("headers", [])
                             if k != b"content-length"
                         ]
                         new_headers.append((b"content-length", str(len(full_body)).encode()))
@@ -124,6 +127,7 @@ class OpenAICompatMiddleware:
             new_lines.append(line)
         return "\n".join(new_lines)
 
+
 # Placeholder for the proxy - will be created in main() with lifespan
 proxy: Optional[FastMCP] = None
 
@@ -131,6 +135,7 @@ proxy: Optional[FastMCP] = None
 @dataclass
 class PlaywrightChild:
     """Represents the Playwright MCP child process."""
+
     process: Optional[asyncio.subprocess.Process] = None
     tools: dict[str, dict] = field(default_factory=dict)
     request_id: int = 0
@@ -149,17 +154,17 @@ async def _read_playwright_output(child: PlaywrightChild):
             if child.process is None or child.process.stdout is None:
                 logger.warning("Playwright stdout reader: process or stdout is None")
                 break
-            
+
             line = await child.process.stdout.readline()
             if not line:
                 logger.warning("Playwright stdout reader: empty line (EOF)")
                 break
-            
+
             try:
                 response = json.loads(line.decode())
                 request_id = response.get("id")
                 logger.debug(f"Playwright response: id={request_id}")
-                
+
                 if request_id and request_id in child.pending_requests:
                     future = child.pending_requests.pop(request_id)
                     if not future.done():
@@ -177,13 +182,13 @@ async def _read_playwright_output(child: PlaywrightChild):
 async def _send_playwright_request(method: str, params: dict = None) -> dict:
     """Send JSON-RPC request to Playwright MCP."""
     global _playwright
-    
+
     if _playwright is None or _playwright.process is None or _playwright.process.stdin is None:
         raise RuntimeError("Playwright MCP not running")
-    
+
     _playwright.request_id += 1
     request_id = _playwright.request_id
-    
+
     request = {
         "jsonrpc": "2.0",
         "id": request_id,
@@ -191,14 +196,14 @@ async def _send_playwright_request(method: str, params: dict = None) -> dict:
     }
     if params:
         request["params"] = params
-    
+
     future = asyncio.get_event_loop().create_future()
     _playwright.pending_requests[request_id] = future
-    
+
     request_line = json.dumps(request) + "\n"
     _playwright.process.stdin.write(request_line.encode())
     await _playwright.process.stdin.drain()
-    
+
     try:
         timeout = 45 if method == "tools/call" else 30
         logger.debug(f"Waiting for {method} (id={request_id}) with timeout={timeout}")
@@ -215,69 +220,74 @@ async def _send_playwright_request(method: str, params: dict = None) -> dict:
 async def _start_playwright():
     """Start the Playwright MCP child process."""
     global _playwright
-    
+
     logger.info("Starting Playwright MCP...")
-    
+
     _playwright = PlaywrightChild()
-    
+
     # Start Playwright MCP process with Firefox (more reliable in containers)
     browser = os.environ.get("PLAYWRIGHT_BROWSER", "firefox")
     _playwright.process = await asyncio.create_subprocess_exec(
-        "npx", "@playwright/mcp", "--browser", browser,
+        "npx",
+        "@playwright/mcp",
+        "--browser",
+        browser,
         stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.DEVNULL,
         env={**os.environ, "CONTAINER": os.environ.get("CONTAINER", "docker")},
     )
-    
+
     # Start background reader
     _playwright.read_task = asyncio.create_task(_read_playwright_output(_playwright))
-    
+
     # Initialize MCP connection
-    await _send_playwright_request("initialize", {
-        "protocolVersion": "2024-11-05",
-        "capabilities": {},
-        "clientInfo": {"name": "proxy-multiplexer", "version": "1.0.0"}
-    })
-    
+    await _send_playwright_request(
+        "initialize",
+        {
+            "protocolVersion": "2024-11-05",
+            "capabilities": {},
+            "clientInfo": {"name": "proxy-multiplexer", "version": "1.0.0"},
+        },
+    )
+
     # Send initialized notification
     if _playwright.process and _playwright.process.stdin:
         notif = json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}) + "\n"
         _playwright.process.stdin.write(notif.encode())
         await _playwright.process.stdin.drain()
-    
+
     # Get tools list
     response = await _send_playwright_request("tools/list", {})
-    
+
     if "result" in response and "tools" in response["result"]:
         for tool in response["result"]["tools"]:
             _playwright.tools[tool["name"]] = tool
-    
+
     logger.info(f"Playwright MCP started with {len(_playwright.tools)} tools")
 
 
 async def _call_playwright_tool(tool_name: str, arguments: dict) -> str:
     """Call a tool on Playwright MCP and return the result."""
-    response = await _send_playwright_request("tools/call", {
-        "name": tool_name,
-        "arguments": arguments
-    })
-    
+    response = await _send_playwright_request(
+        "tools/call", {"name": tool_name, "arguments": arguments}
+    )
+
     if "error" in response:
         return f"Error: {response['error'].get('message', 'Unknown error')}"
-    
+
     if "result" in response:
         content = response["result"].get("content", [])
         texts = [c.get("text", "") for c in content if c.get("type") == "text"]
         return "\n".join(texts) if texts else "No response"
-    
+
     return "No response"
 
 
 async def _stop_playwright():
     """Stop the Playwright MCP child process."""
     global _playwright
-    
+
     if _playwright:
         if _playwright.read_task:
             _playwright.read_task.cancel()
@@ -291,16 +301,17 @@ async def _stop_playwright():
 # Entry Point
 # =============================================================================
 
+
 def main():
     """Run the proxy multiplexer server."""
     global proxy
-    
+
     # Check for transport mode via environment variable
     transport_mode = os.environ.get("MCP_TRANSPORT", "http").lower()
-    
+
     host = os.environ.get("MCP_HOST", "0.0.0.0")
     port = int(os.environ.get("MCP_PORT", "8080"))
-    
+
     if transport_mode == "stdio":
         logger.info("Starting MCP Proxy Multiplexer with STDIO transport")
         logger.info("All 36 tools (demo-recorder + Playwright) available")
@@ -308,7 +319,7 @@ def main():
         logger.info(f"Starting MCP Proxy Multiplexer on {host}:{port}")
         logger.info("Using streamable-HTTP transport at /mcp/ for OpenAI compatibility")
         logger.info("See: https://gofastmcp.com/integrations/openai")
-    
+
     # Create lifespan context manager for starting/stopping Playwright
     @asynccontextmanager
     async def lifespan(app):
@@ -321,47 +332,50 @@ def main():
         except Exception as e:
             logger.warning(f"Failed to start Playwright MCP: {e}")
             logger.warning("Playwright tools will not be available")
-        
+
         yield  # Server is running
-        
+
         # Shutdown
         logger.info("Shutting down Playwright MCP...")
         await _stop_playwright()
         logger.info("Playwright MCP stopped")
-    
+
     # Create the FastMCP server with lifespan
     proxy = FastMCP("demo-recorder", stateless_http=True, lifespan=lifespan)
-    
+
     # Import and register all demo-recorder tools from server.py
     from ..server import mcp as demo_recorder_mcp
-    
+
     # Copy tools from demo-recorder to proxy
     async def copy_tools():
         tools_dict = await demo_recorder_mcp.get_tools()
         for tool_name, tool in tools_dict.items():
             proxy.add_tool(tool)
         logger.info(f"Copied {len(tools_dict)} tools from demo-recorder")
-    
+
     # Run the copy in a new event loop (since we're not in async context)
     asyncio.get_event_loop().run_until_complete(copy_tools())
-    
+
     # Register Playwright tool proxies
     _register_playwright_tools(proxy)
-    
+
     # Add custom routes
     _register_custom_routes(proxy)
-    
+
     # Monkeypatch: strip outputSchema/_meta for OpenAI compatibility
     # OpenAI's Responses API rejects tools with these FastMCP-specific fields
     try:
         from fastmcp.tools import Tool as FastMCPTool
+
         _orig = FastMCPTool.to_mcp_tool
+
         def _patched(self, **kwargs):
-            kwargs['include_fastmcp_meta'] = False
+            kwargs["include_fastmcp_meta"] = False
             tool = _orig(self, **kwargs)
-            if hasattr(tool, 'outputSchema'):
-                object.__setattr__(tool, 'outputSchema', None)
+            if hasattr(tool, "outputSchema"):
+                object.__setattr__(tool, "outputSchema", None)
             return tool
+
         FastMCPTool.to_mcp_tool = _patched
         logger.info("Patched Tool.to_mcp_tool to strip outputSchema for OpenAI compatibility")
     except Exception as e:
@@ -382,7 +396,7 @@ def main():
 
 def _register_playwright_tools(mcp_instance: FastMCP):
     """Register all Playwright tool proxies on the given FastMCP instance."""
-    
+
     @mcp_instance.tool
     async def browser_close() -> str:
         """Close the page."""
@@ -443,7 +457,9 @@ def _register_playwright_tools(mcp_instance: FastMCP):
         return await _call_playwright_tool("browser_press_key", {"key": key})
 
     @mcp_instance.tool
-    async def browser_type(ref: str, text: str, element: str = None, submit: bool = None, slowly: bool = None) -> str:
+    async def browser_type(
+        ref: str, text: str, element: str = None, submit: bool = None, slowly: bool = None
+    ) -> str:
         """Type text into editable element."""
         args = {"ref": ref, "text": text}
         if element:
@@ -489,7 +505,13 @@ def _register_playwright_tools(mcp_instance: FastMCP):
         return await _call_playwright_tool("browser_run_code", {"code": code})
 
     @mcp_instance.tool
-    async def browser_take_screenshot(type: str = "png", filename: str = None, element: str = None, ref: str = None, fullPage: bool = None) -> str:
+    async def browser_take_screenshot(
+        type: str = "png",
+        filename: str = None,
+        element: str = None,
+        ref: str = None,
+        fullPage: bool = None,
+    ) -> str:
         """Take a screenshot of the current page."""
         args = {"type": type}
         if filename:
@@ -511,7 +533,13 @@ def _register_playwright_tools(mcp_instance: FastMCP):
         return await _call_playwright_tool("browser_snapshot", args)
 
     @mcp_instance.tool
-    async def browser_click(ref: str, element: str = None, doubleClick: bool = None, button: str = None, modifiers: list[str] = None) -> str:
+    async def browser_click(
+        ref: str,
+        element: str = None,
+        doubleClick: bool = None,
+        button: str = None,
+        modifiers: list[str] = None,
+    ) -> str:
         """Perform click on a web page."""
         args = {"ref": ref}
         if element:
@@ -527,12 +555,15 @@ def _register_playwright_tools(mcp_instance: FastMCP):
     @mcp_instance.tool
     async def browser_drag(startElement: str, startRef: str, endElement: str, endRef: str) -> str:
         """Perform drag and drop between two elements."""
-        return await _call_playwright_tool("browser_drag", {
-            "startElement": startElement,
-            "startRef": startRef,
-            "endElement": endElement,
-            "endRef": endRef
-        })
+        return await _call_playwright_tool(
+            "browser_drag",
+            {
+                "startElement": startElement,
+                "startRef": startRef,
+                "endElement": endElement,
+                "endRef": endRef,
+            },
+        )
 
     @mcp_instance.tool
     async def browser_hover(ref: str, element: str = None) -> str:
@@ -564,7 +595,9 @@ def _register_playwright_tools(mcp_instance: FastMCP):
         args = {}
         if time is not None:
             if time > 30:
-                logger.warning(f"browser_wait_for time={time}s capped to 30s (was likely meant as ms)")
+                logger.warning(
+                    f"browser_wait_for time={time}s capped to 30s (was likely meant as ms)"
+                )
                 time = min(time, 30)
             args["time"] = time
         if text:
@@ -576,33 +609,32 @@ def _register_playwright_tools(mcp_instance: FastMCP):
 
 def _register_custom_routes(mcp_instance: FastMCP):
     """Register custom HTTP routes on the given FastMCP instance."""
-    
+
     @mcp_instance.custom_route("/health", methods=["GET"])
     async def health_check(request):
         """Health check endpoint."""
         from starlette.responses import JSONResponse
+
         tools = await mcp_instance.get_tools()
-        return JSONResponse({
-            "status": "healthy",
-            "service": "demo-recorder-mcp",
-            "tools_count": len(tools)
-        })
+        return JSONResponse(
+            {"status": "healthy", "service": "demo-recorder-mcp", "tools_count": len(tools)}
+        )
 
     @mcp_instance.custom_route("/", methods=["GET"])
     async def info(request):
         """Server info endpoint."""
         from starlette.responses import JSONResponse
+
         tools = await mcp_instance.get_tools()
-        return JSONResponse({
-            "name": "demo-recorder-mcp",
-            "description": "MCP server for browser automation, video recording, and TTS",
-            "transport": "http",
-            "endpoints": {
-                "mcp": "/mcp/",
-                "health": "/health"
-            },
-            "tools_count": len(tools)
-        })
+        return JSONResponse(
+            {
+                "name": "demo-recorder-mcp",
+                "description": "MCP server for browser automation, video recording, and TTS",
+                "transport": "http",
+                "endpoints": {"mcp": "/mcp/", "health": "/health"},
+                "tools_count": len(tools),
+            }
+        )
 
 
 if __name__ == "__main__":

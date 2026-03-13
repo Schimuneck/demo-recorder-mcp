@@ -24,14 +24,14 @@ logger = logging.getLogger(__name__)
 def main():
     """Run the HTTP server using FastMCP's SSE transport."""
     from recorder.server import mcp
-    
+
     host = os.environ.get("MCP_HOST", "0.0.0.0")
     port = int(os.environ.get("MCP_PORT", "8080"))
-    
+
     logger.info(f"Starting Demo Recorder MCP HTTP Server on {host}:{port}")
     logger.info(f"SSE endpoint: http://{host}:{port}/sse")
     logger.info("Using FastMCP built-in SSE transport")
-    
+
     # FastMCP handles all the SSE protocol details
     mcp.run(transport="sse", host=host, port=port)
 
